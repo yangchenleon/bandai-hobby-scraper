@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import os
+from typing import Optional
+
+"""
+配置文件
+"""
+
+# 基础URL配置
+BASE_URL = "https://bandai-hobby.net"
+PRODUCT_LIST_URL = f"{BASE_URL}/brand/hg/" # 分页总目录，根据这个修改爬取大类
+# PRODUCT_LIST_URL = f"https://bandai-hobby.net/brand/hg/"
+
+# 请求头配置
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+# # 图片下载请求头
+# IMAGE_HEADERS = {
+#     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+#     'Referer': '',  # 动态设置
+#     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+#     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+#     'Accept-Encoding': 'gzip, deflate, br',
+#     'Connection': 'keep-alive',
+# }
+
+# 文件路径配置
+OUTPUT_DIR = "/mnt/d/code/bandai-hobby-scraper/data"
+SCRAPED_DATA_FILE = f"{OUTPUT_DIR}/scraped_data.json"
+
+# 请求配置
+REQUEST_TIMEOUT = 10
+IMAGE_TIMEOUT = 5
+
+# CSS选择器配置
+CSS_SELECTORS = {
+    'product_cards': 'p-card__wrap c-grid -cols2-1',
+    'product_name': 'p-heading__h1-product',
+    'thumbnail_wrapper': 'swiper-wrapper pg-products__sliderThumbnailInner',
+    'product_details': 'pg-products__detail',
+    'detail_label': 'pg-products__label',
+    'detail_label_inner': 'pg-products__labelInner',
+    'detail_label_text': 'pg-products__labelTxt',
+    'product_article': 'pg-products__article',
+    'pagination_links': 'c-archives__pagination-list-item-link',  # 分页链接选择器
+}
+
+class Config:
+    # 数据库配置
+    DATABASE_PATH = os.getenv("DATABASE_PATH", "database/bandai_hobby.db")
+    
+    # MinIO配置
+    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bandai-hobby")
+    
+    # 数据源配置
+    DATA_DIR = os.getenv("DATA_DIR", "data")
+    
+    @classmethod
+    def get_minio_config(cls) -> dict:
+        return {
+            "endpoint": cls.MINIO_ENDPOINT,
+            "access_key": cls.MINIO_ACCESS_KEY,
+            "secret_key": cls.MINIO_SECRET_KEY,
+            "bucket_name": cls.MINIO_BUCKET
+        }

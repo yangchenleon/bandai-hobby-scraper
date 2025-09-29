@@ -1,0 +1,9 @@
+data
+database
+
+*.pyc
+__pycache__
+
+venv
+
+*.json
