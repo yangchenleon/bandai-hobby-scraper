@@ -7,11 +7,13 @@
 import sys
 import os
 import re
+from pathlib import Path
 from urllib.parse import urljoin
 
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+from config import PRODUCT_LIST_URL
 from scraper import BandaiScraper
 
 
@@ -98,9 +100,9 @@ def scrape_product_details_batch(scraper, product_links, max_products=10):
         
         try:
             # 爬取产品详情
-            product_details = scraper.scrape_product_details(product_url, base_dir)
-            # print(product_details)
-            if product_details:
+            result = scraper.scrape_product_details(product_url, base_dir)
+            if result:
+                product_details, product_dir = result
                 print(f"✅ 产品详情爬取成功！")
                 success_count += 1
             else:
@@ -164,12 +166,13 @@ def scrape_products_from_database(scraper, products, max_products, db):
         try:
             # 爬取产品详情
             print(f"正在爬取产品详情...")
-            product_details = scraper.scrape_product_details(
+            result = scraper.scrape_product_details(
                 product_url=product['url'], 
                 output_path=product_dir
             )
             
-            if product_details:
+            if result:
+                product_details, product_dir = result
                 print(f"✅ 产品详情爬取成功")
                 success_count += 1
             else:
@@ -190,57 +193,108 @@ def main():
     print("万代模型爬虫启动...")
     print("=" * 50)
     
-    # 创建爬虫实例
+    # 创建爬虫实例和队列管理器
     scraper = BandaiScraper()
-    page, detail, import_data = 0,1,1
-    MAX_PRODUCTS = 6  # 最大处理产品数量，可以根据需要调整
+    from queue_manager import QueueManager
+    from database import DatabaseManager
+    from config import Config
+    from data_importer import DataImporter
     
-    if page:
-        # 1. 爬取产品列表（多页）
-        num_pages = scraper.get_total_pages()
-        num_pages = 5
-        print(f"=== 爬取产品列表（最多 {num_pages} 页） ===")
-        list_result = scraper.scrape_product_list(num_pages=num_pages, start_page=1)
-        print(f"\n产品列表爬取完成！共找到 {len(list_result.data)} 个产品")
+    queue_manager = QueueManager(Config.DATABASE_PATH)
+    db = DatabaseManager(Config.DATABASE_PATH)
+    importer = DataImporter()
     
-    if detail:
-        # 2. 从数据库获取未爬取详情的产品URL
-        print("\n=== 从数据库获取未爬取详情的产品 ===")
-        from database import DatabaseManager
-        from config import Config
+    # 重置处理中的任务为待处理状态
+    print("=== 检查并重置处理中的任务 ===")
+    queue_manager.reset_processing_to_pending()
+    
+    # 配置参数
+    start_page = 1
+    end_page = 2
+    batch_size = 10
+    brand = "mg"
+    base_url = PRODUCT_LIST_URL + brand + '/'
+    
+    # 1. 爬取产品列表并添加到待处理队列
+    print(f"=== 爬取产品列表（第 {start_page} 到 {end_page} 页） ===")
+    for page_num in range(start_page, end_page + 1):
+        print(f"\n正在爬取第 {page_num} 页...")
+        list_result = scraper.scrape_product_list(num_pages=1, start_page=page_num, base_url=base_url)
         
-        db = DatabaseManager(Config.DATABASE_PATH)
-        products_to_scrape = db.get_products_without_details()
-        
-        if products_to_scrape:
-            print(f"找到 {len(products_to_scrape)} 个未爬取详情的产品")
-            
-            # 批量爬取产品详情
-            success_count, failed_count = scrape_products_from_database(
-                scraper, products_to_scrape, MAX_PRODUCTS, db
-            )
-            
-            # 输出总结
-            print("\n" + "=" * 50)
-            print("=== 爬取完成 ===")
-            print(f"成功处理: {success_count} 个产品")
-            print(f"失败: {failed_count} 个产品")
-            print(f"本次处理: {min(MAX_PRODUCTS, len(products_to_scrape))} 个产品")
-            print(f"数据库中未处理: {len(products_to_scrape)} 个产品")
+        if list_result.success and list_result.data:
+            added_count = queue_manager.add_to_pending_queue(list_result.data, page_num)
+            print(f"第 {page_num} 页添加了 {added_count} 个产品到待处理队列")
         else:
-            print("✅ 所有产品详情已爬取完成！")
+            print(f"第 {page_num} 页爬取失败")
+    
+    # 显示队列统计
+    stats = queue_manager.get_queue_stats()
+    print(f"\n队列统计: 待处理 {stats['pending']}, 处理中 {stats['processing']}, 已完成 {stats['completed']}, 失败 {stats['failed']}")
 
-    if import_data:# 3. 导入爬取的数据到数据库
-        print("\n=== 开始导入数据到数据库 ===")
-        try:    
-            from data_importer import DataImporter
+    # 2. 从待处理队列获取产品进行详情爬取
+    print("\n=== 开始处理待处理队列 ===")
+    
+    success_count = 0
+    failed_count = 0
+    
+    while True:
+        # 获取待处理的产品
+        pending_products = queue_manager.get_pending_products(batch_size)
+        
+        if not pending_products:
+            print("✅ 待处理队列为空，处理完成！")
+            break
+        
+        print(f"\n获取到 {len(pending_products)} 个待处理产品")
+        
+        for product in pending_products:
+            print(f"\n--- 处理产品: {product['product_name']} ---")
+            print(f"URL: {product['url']}")
             
-            importer = DataImporter()
-            importer.import_all_data()
-            print(f"✅ 数据导入完成")
-        except Exception as e:
-            print(f"❌ 数据导入失败: {e}")
-
+            # 标记为处理中
+            queue_manager.mark_as_processing(product['id'])
+            
+            try:
+                # 爬取产品详情
+                result = scraper.scrape_product_details(
+                    product_url=product['url'], 
+                    output_path='data'
+                )
+                
+                if result:
+                    product_details, product_dir = result
+                    # 直接导入该产品（包含图片上传到对象存储）
+                    importer.import_product(Path(product_dir))
+                    queue_manager.mark_as_completed(product['id'])
+                    success_count += 1
+                    print(f"✅ 产品处理成功")
+                else:
+                    raise Exception("产品详情爬取失败")
+                    
+            except Exception as e:
+                print(f"❌ 产品处理失败: {e}")
+                queue_manager.add_to_failed_queue(
+                    product['url'], 
+                    product['product_name'], 
+                    str(e)
+                )
+                queue_manager.mark_as_completed(product['id'])  # 标记为已完成，避免重复处理
+                failed_count += 1
+        
+        # 显示当前统计
+        stats = queue_manager.get_queue_stats()
+        print(f"\n当前统计: 成功 {success_count}, 失败 {failed_count}")
+        print(f"队列状态: 待处理 {stats['pending']}, 处理中 {stats['processing']}, 已完成 {stats['completed']}, 失败 {stats['failed']}")
+    
+    # 最终统计
+    print("\n" + "=" * 50)
+    print("=== 处理完成 ===")
+    print(f"成功处理: {success_count} 个产品")
+    print(f"失败: {failed_count} 个产品")
+    
+    # 清理已完成的项目
+    if success_count > 0:
+        queue_manager.clear_completed()
 
 if __name__ == "__main__":
     main()

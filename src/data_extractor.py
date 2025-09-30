@@ -131,7 +131,7 @@ class DataExtractor:
             soup: BeautifulSoup解析对象
             
         Returns:
-            str: 产品标签，如"online"、"gbase"等，未找到时返回空字符串
+            str: 产品标签，如"online"、"gbase"等，未找到时返回"general"
         """
         # 查找class包含pg-products__tag的元素
         tag_elements = soup.find_all(class_=lambda x: x and 'pg-products__tag' in x)
@@ -145,8 +145,8 @@ class DataExtractor:
                     print(f"找到产品标签: {tag}")
                     return tag
         
-        print("未找到产品标签")
-        return ""
+        print("未找到产品标签，使用默认值: general")
+        return "general"
     
     def extract_series_links(self, soup: BeautifulSoup) -> str:
         """

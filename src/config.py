@@ -8,8 +8,14 @@ from typing import Optional
 """
 
 # 基础URL配置
+Brand = [
+    "hg", "rg", "mg", "mgka",
+    "mgsd", "pg", "entry_grade_g", "optionpartsset", 
+    "gundam_decal", "sdcs", "SDEX", "bb",
+    "re100", "fullmechanics", "mgex", "expo2025-gunpla",
+    "ecoplaproject_g", "actionbase", "tool"]
 BASE_URL = "https://bandai-hobby.net"
-PRODUCT_LIST_URL = f"{BASE_URL}/brand/hg/" # 分页总目录，根据这个修改爬取大类
+PRODUCT_LIST_URL = f"{BASE_URL}/brand/" # 分页总目录，根据这个修改爬取大类
 # PRODUCT_LIST_URL = f"https://bandai-hobby.net/brand/hg/"
 
 # 请求头配置

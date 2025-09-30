@@ -57,7 +57,6 @@ class DataImporter:
         image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.jpeg")) + list(images_dir.glob("*.png"))
         
         if not image_files:
-            print(f"  ⚠️ 未找到图片文件")
             return
 
         
