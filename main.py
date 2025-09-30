@@ -258,7 +258,8 @@ def main():
                 # 爬取产品详情
                 result = scraper.scrape_product_details(
                     product_url=product['url'], 
-                    output_path='data'
+                    output_path='data',
+                    queue_product_name=product['product_name']
                 )
                 
                 if result:

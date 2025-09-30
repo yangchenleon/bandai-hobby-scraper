@@ -183,7 +183,7 @@ class BandaiScraper:
             print(error_msg)
             return ScrapingResult(success=False, error_message=error_msg)
     
-    def scrape_product_details(self, product_url: str = None, output_path: str = None) -> Optional[Tuple[ProductDetails, str]]:
+    def scrape_product_details(self, product_url: str = None, output_path: str = None, queue_product_name: Optional[str] = None) -> Optional[Tuple[ProductDetails, str]]:
         """
         抓取产品详情页面
         
@@ -196,7 +196,11 @@ class BandaiScraper:
         """
         url = product_url
         
-        # 校验URL格式
+        # Premium Bandai 特殊页面处理
+        if url and url.startswith('https://p-bandai.jp/item/'):
+            return self._scrape_p_bandai_details(url, output_path, queue_product_name)
+        
+        # 常规bandai-hobby页面
         if not url or not url.startswith('https://bandai-hobby.net/item'):
             print(f"❌ 不支持的URL格式: {url}")
             return None
@@ -326,6 +330,80 @@ class BandaiScraper:
             return None
         except Exception as e:
             print(f"处理产品详情时出错: {e}")
+            return None
+
+    def _scrape_p_bandai_details(self, url: str, output_base: str, queue_product_name: Optional[str]) -> Optional[Tuple[ProductDetails, str]]:
+        """处理 Premium Bandai 商品页，基于待处理队列的产品名拆分信息。"""
+        try:
+            # 从待处理队列传入的产品名中解析 name / price / release_date
+            raw_text = queue_product_name or ""
+            parts = [p.strip() for p in raw_text.split('-') if p is not None]
+            product_name = ""
+            price = ""
+            release_date = ""
+            if len(parts) >= 4:
+                product_name = f"{parts[0]}-{parts[1]}".strip('- ')
+                price = parts[2]
+                release_date = parts[3]
+            else:
+                if len(parts) >= 1:
+                    product_name = parts[0]
+                if len(parts) >= 2:
+                    price = parts[1]
+                if len(parts) >= 3:
+                    release_date = parts[2]
+
+            # 请求页面，提取正文
+            print(f"正在访问Premium Bandai产品详情页: {url}")
+            response = self.session.get(url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            article_section = soup.find(class_='item_caption_area')
+            if article_section:
+                article_content = BeautifulSoup(str(article_section), 'html.parser').get_text(separator='\n', strip=False)
+            else:
+                print("未找到 item_caption_area，文章内容置空")
+                article_content = ""
+
+            # 固定标签
+            product_tag = "premium"
+            series = "gunpla"
+
+            # 清理文件夹并输出路径
+            safe_folder_name = self.data_extractor.sanitize_folder_name(product_name or "premium_item")
+            output_path = os.path.join(output_base, safe_folder_name)
+
+            # 组织 product_info 字段
+            product_info = {}
+            if price:
+                product_info['価格'] = price
+            if release_date:
+                product_info['発売日'] = release_date
+
+            # Premium站点暂不处理图片下载（可后续扩展）
+            image_links: List[str] = []
+
+            details = ProductDetails(
+                name=product_name,
+                image_links=image_links,
+                product_info=product_info,
+                article_content=article_content,
+                url=url,
+                product_tag=product_tag,
+                series=series
+            )
+
+            # 保存JSON
+            self._save_product_details(details, output_path)
+            return details, output_path
+
+        except requests.exceptions.RequestException as e:
+            print(f"请求Premium Bandai页面时出错: {e}")
+            return None
+        except Exception as e:
+            print(f"处理Premium Bandai详情时出错: {e}")
             return None
     
     def _save_product_list(self, results: List[ProductLink]):
