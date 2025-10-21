@@ -74,7 +74,7 @@ def view_database(db_path="database/bandai_hobby.db"):
     except Exception as e:
         print(f"❌ 查看数据库时出错: {e}")
 
-def view_products_only(db_path="bandai_hobby.db"):
+def view_products_only(db_path="database/bandai_hobby.db"):
     """只查看产品表的内容"""
     
     if not Path(db_path).exists():

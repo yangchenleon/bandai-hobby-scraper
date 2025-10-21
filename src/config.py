@@ -14,6 +14,29 @@ Brand = [
     "gundam_decal", "sdcs", "SDEX", "bb",
     "re100", "fullmechanics", "mgex", "expo2025-gunpla",
     "ecoplaproject_g", "actionbase", "tool"]
+
+# 大写品牌代码到实际网页后缀的映射
+BRAND_CODE_TO_SLUG = {
+    "HG": "hg",
+    "RG": "rg",
+    "MG": "mg",
+    "MGKA": "mgka",
+    "MGSD": "mgsd",
+    "PG": "pg",
+    "EG": "entry_grade_g",
+    "OPTION": "optionpartsset",
+    "DECAL": "gundam_decal",
+    "SDCS": "sdcs",
+    "SDEX": "SDEX",
+    "BB": "bb",
+    "RE": "re100",
+    "FM": "fullmechanics",
+    "MGEX": "mgex",
+    "EXPO2025": "expo2025-gunpla",
+    "ECO": "ecoplaproject_g",
+    "ABASE": "actionbase",
+    "TOOL": "tool",
+}
 BASE_URL = "https://bandai-hobby.net"
 PRODUCT_LIST_URL = f"{BASE_URL}/brand/" # 分页总目录，根据这个修改爬取大类
 # PRODUCT_LIST_URL = f"https://bandai-hobby.net/brand/hg/"
@@ -44,7 +67,7 @@ SCRAPED_DATA_FILE = f"{OUTPUT_DIR}/scraped_data.json"
 
 # 请求配置
 REQUEST_TIMEOUT = 10
-IMAGE_TIMEOUT = 5
+IMAGE_TIMEOUT = 30  # 增加图像下载超时时间到30秒
 
 # CSS选择器配置
 CSS_SELECTORS = {

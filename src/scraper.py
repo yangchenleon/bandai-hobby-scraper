@@ -8,11 +8,12 @@ import requests
 import json
 import os
 import time
+from urllib.parse import urlparse
 from typing import List, Optional, Tuple
 
 from config import (
     PRODUCT_LIST_URL,  DEFAULT_HEADERS, 
-    REQUEST_TIMEOUT, SCRAPED_DATA_FILE, CSS_SELECTORS
+    REQUEST_TIMEOUT, SCRAPED_DATA_FILE, CSS_SELECTORS, BRAND_CODE_TO_SLUG
 )
 from models import ProductLink, ProductDetails, ScrapingResult
 from data_extractor import DataExtractor
@@ -32,7 +33,7 @@ class BandaiScraper:
         self.image_downloader = ImageDownloader(self.session)
     
     
-    def get_total_pages(self) -> int:
+    def get_total_pages(self, base_url: Optional[str] = None) -> int:
         """
         获取产品列表的总页数
         
@@ -40,8 +41,9 @@ class BandaiScraper:
             int: 总页数，获取失败时返回1
         """
         try:
-            print(f"正在获取总页数: {PRODUCT_LIST_URL}")
-            response = self.session.get(PRODUCT_LIST_URL, timeout=REQUEST_TIMEOUT)
+            target_url = base_url or PRODUCT_LIST_URL
+            print(f"正在获取总页数: {target_url}")
+            response = self.session.get(target_url, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             response.encoding = 'utf-8'
             
@@ -87,7 +89,7 @@ class BandaiScraper:
             print(f"获取总页数时出错: {e}")
             return 1
     
-    def scrape_product_list(self, num_pages: int = None, start_page: int = 1, base_url: str = None) -> ScrapingResult:
+    def scrape_product_list(self, num_pages: int = None, start_page: int = 1, base_url: str = None, brand_code: str = None) -> ScrapingResult:
         """
         抓取产品列表页面（支持多页）
         
@@ -141,17 +143,99 @@ class BandaiScraper:
                 
                 for link in links:
                     href = link.get('href')
-                    # 有些链接包含多个文本片段，使用 '-' 进行分隔
-                    link_text = '-'.join(s for s in link.stripped_strings if s)
                     
-                    # 创建产品链接对象
+                    # 精确提取产品信息
+                    product_name = ""
+                    product_price = ""
+                    product_release_date = ""
+                    
+                    # 提取产品名称
+                    title_elem = link.select_one('.p-card__tit')
+                    if title_elem:
+                        product_name = title_elem.get_text(strip=True)
+                    
+                    # 提取价格
+                    price_elem = link.select_one('.p-card__price')
+                    if price_elem:
+                        product_price = price_elem.get_text(strip=True)
+                    
+                    # 提取发布日期
+                    date_elem = link.select_one('.p-card_date')
+                    if date_elem:
+                        product_release_date = date_elem.get_text(strip=True)
+                    
+                    # 组合完整的产品信息
+                    # link_text = f"{product_name}-{product_price}-{product_release_date}"
+                    print(f"产品信息: {product_name} | {product_price} | {product_release_date}")
+
+                    # 查找列表头像图（p-card__img 下的 img）
+                    avatar_url = None
+                    img_tag = link.select_one('.p-card__img img')
+                    if img_tag and img_tag.get('src'):
+                        avatar_url = img_tag.get('src')
+
+                    # 创建产品链接对象（附带 avatar 链接）
                     product_link = ProductLink(
                         href=href,
-                        text=link_text,
+                        text=product_name,
+                        avatar=avatar_url
                     )
                     page_results.append(product_link)
-                    
-                    print(f"  链接: {link_text} -> {href}")
+
+
+                    # 若有头像，下载到产品根目录，并将下载链接写入产品JSON的 avatar 字段
+                    try:
+                        if avatar_url and href:
+                            # 生成产品目录（基于产品名文本）
+                            safe_folder_name = self.data_extractor.sanitize_folder_name(product_name or 'product')
+                            # 若传入品牌代码，则在 data/<BRAND>/ 下保存
+                            brand_folder = None
+                            if brand_code and BRAND_CODE_TO_SLUG.get(brand_code.upper()):
+                                brand_folder = brand_code.upper()
+                            product_dir = os.path.join('data', brand_folder, safe_folder_name) if brand_folder else os.path.join('data', safe_folder_name)
+                            os.makedirs(product_dir, exist_ok=True)
+
+                            # 通过图片下载器下载（Referer 使用当前列表页 URL）
+                            # 若头像已存在则跳过下载
+                            avatar_filename = os.path.basename(urlparse(avatar_url).path)
+                            target_avatar_path = os.path.join(product_dir, avatar_filename) if avatar_filename else None
+                            if target_avatar_path and os.path.exists(target_avatar_path):
+                                saved_path = target_avatar_path
+                            else:
+                                saved_path = self.image_downloader.download_single_image(
+                                    image_url=avatar_url,
+                                    referer_url=current_url,
+                                    output_path=product_dir
+                                )
+
+                            # 将 avatar 链接写入/更新产品 JSON（与后续详情逻辑兼容）
+                            json_path = os.path.join(product_dir, 'product_details.json')
+                            existing = {}
+                            if os.path.exists(json_path):
+                                try:
+                                    with open(json_path, 'r', encoding='utf-8') as f:
+                                        existing = json.load(f)
+                                except Exception:
+                                    existing = {}
+
+                            # 最小字段填充，详情阶段会覆盖/补全
+                            existing.setdefault('product_name', product_name)
+                            existing.setdefault('product_info', {
+                                '価格': product_price, 
+                                '発売日': product_release_date,
+                                '対象年齢': '8歳以上'
+                            })
+                            existing.setdefault('article_content', '')
+                            existing.setdefault('image_links', [])
+                            existing.setdefault('product_tag', '')
+                            existing.setdefault('series', '')
+                            existing['url'] = href
+                            existing['avatar'] = avatar_url
+
+                            with open(json_path, 'w', encoding='utf-8') as f:
+                                json.dump(existing, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"  列表头像处理失败: {e}")
                 
                 print(f"第 {page} 页收集到 {len(page_results)} 个产品链接")
                 all_results.extend(page_results)
@@ -183,13 +267,14 @@ class BandaiScraper:
             print(error_msg)
             return ScrapingResult(success=False, error_message=error_msg)
     
-    def scrape_product_details(self, product_url: str = None, output_path: str = None, queue_product_name: Optional[str] = None) -> Optional[Tuple[ProductDetails, str]]:
+    def scrape_product_details(self, product_url: str, base_dir: str, queue_product_name: str) -> Optional[Tuple[ProductDetails, str]]:
         """
         抓取产品详情页面
         
         Args:
-            product_url: 产品详情页URL，默认使用配置中的URL
-            output_path: 产品文件夹路径，用于保存图片和JSON文件
+            product_url: 产品详情页URL
+            base_dir: 基础目录路径（如 'data'）
+            queue_product_name: 队列中的产品名称，用于确定最终路径
             
         Returns:
             Tuple[ProductDetails, str]: (产品详情信息, 产品文件夹路径)，失败时返回None
@@ -197,8 +282,8 @@ class BandaiScraper:
         url = product_url
         
         # Premium Bandai 特殊页面处理
-        if url and url.startswith('https://p-bandai.jp/item/'):
-            return self._scrape_p_bandai_details(url, output_path, queue_product_name)
+        if url and 'p-bandai' in url:
+            return self._scrape_p_bandai_details(url, base_dir, queue_product_name)
         
         # 常规bandai-hobby页面
         if not url or not url.startswith('https://bandai-hobby.net/item'):
@@ -220,8 +305,19 @@ class BandaiScraper:
             
             # 1. 获取产品名称
             product_name = self.data_extractor.extract_product_name(soup)
-            safe_folder_name = self.data_extractor.sanitize_folder_name(product_name)
-            output_path = os.path.join(output_path, safe_folder_name)
+            
+            # 构建产品文件夹路径
+            safe_folder_name = self.data_extractor.sanitize_folder_name(queue_product_name)
+            target_folder = os.path.join(base_dir, safe_folder_name)
+            
+            if os.path.exists(target_folder):
+                output_path = target_folder
+                print(f"找到对应文件夹: {output_path}")
+            else:
+                # 如果没找到，使用解析的产品名称创建新文件夹
+                safe_folder_name = self.data_extractor.sanitize_folder_name(product_name)
+                output_path = os.path.join(base_dir, safe_folder_name)
+                print(f"未找到对应文件夹，使用解析的产品名称: {output_path}")
             
             # 检查是否已存在产品文件夹和JSON文件
             json_file_path = os.path.join(output_path, "product_details.json")
@@ -237,28 +333,16 @@ class BandaiScraper:
                 existing_data = {}
             
             # 1. 处理产品详细信息
-            if existing_data.get('product_info') and existing_data['product_info']:
-                product_info = existing_data['product_info']
-            else:
-                product_info = self.data_extractor.extract_product_info(soup)
+            product_info = self.data_extractor.extract_product_info(soup)
             
             # 2. 处理产品文章内容
-            if existing_data.get('article_content') and existing_data['article_content'].strip():
-                article_content = existing_data['article_content']
-            else:
-                article_content = self.data_extractor.extract_article_content(soup)
+            article_content = self.data_extractor.extract_article_content(soup)
             
             # 3. 处理产品标签
-            if existing_data.get('product_tag') and existing_data['product_tag'].strip():
-                product_tag = existing_data['product_tag']
-            else:
-                product_tag = self.data_extractor.extract_product_tag(soup)
+            product_tag = self.data_extractor.extract_product_tag(soup)
             
             # 4. 处理系列链接
-            if existing_data.get('series') and existing_data['series'].strip():
-                series = existing_data['series']
-            else:
-                series = self.data_extractor.extract_series_links(soup)
+            series = self.data_extractor.extract_series_links(soup)
             
             # 5. 处理图片链接
             if existing_data.get('image_links') and existing_data['image_links']:
@@ -306,10 +390,14 @@ class BandaiScraper:
                     print(f"✅ 图片下载成功，共下载 {len(downloaded_files)} 张图片")
                 else:
                     print(f"❌ 图片下载失败")
+                    raise Exception("图片下载失败，任务失败")
             else:
                 download_success = True
             
-            # 创建产品详情对象
+            # 创建产品详情对象（保留已存在的 avatar）
+            existing_avatar = existing_data.get('avatar', '') if isinstance(existing_data, dict) else ''
+            # 从base_dir中提取brand信息 (data/HG -> HG)
+            brand = os.path.basename(base_dir) if base_dir else ""
             product_details = ProductDetails(
                 name=product_name,
                 image_links=image_links,
@@ -317,7 +405,9 @@ class BandaiScraper:
                 article_content=article_content,
                 url=url,
                 product_tag=product_tag,
-                series=series
+                series=series,
+                avatar=existing_avatar,
+                brand=brand
             )
             
             # 保存结果
@@ -332,67 +422,65 @@ class BandaiScraper:
             print(f"处理产品详情时出错: {e}")
             return None
 
-    def _scrape_p_bandai_details(self, url: str, output_base: str, queue_product_name: Optional[str]) -> Optional[Tuple[ProductDetails, str]]:
+    def _scrape_p_bandai_details(self, url: str, base_dir: str, product_name: Optional[str]) -> Optional[Tuple[ProductDetails, str]]:
         """处理 Premium Bandai 商品页，基于待处理队列的产品名拆分信息。"""
         try:
-            # 从待处理队列传入的产品名中解析 name / price / release_date
-            raw_text = queue_product_name or ""
-            parts = [p.strip() for p in raw_text.split('-') if p is not None]
-            product_name = ""
-            price = ""
-            release_date = ""
-            if len(parts) >= 4:
-                product_name = f"{parts[0]}-{parts[1]}".strip('- ')
-                price = parts[2]
-                release_date = parts[3]
-            else:
-                if len(parts) >= 1:
-                    product_name = parts[0]
-                if len(parts) >= 2:
-                    price = parts[1]
-                if len(parts) >= 3:
-                    release_date = parts[2]
 
             # 请求页面，提取正文
             print(f"正在访问Premium Bandai产品详情页: {url}")
-            response = self.session.get(url, timeout=REQUEST_TIMEOUT)
-            response.raise_for_status()
-            response.encoding = 'utf-8'
-            soup = BeautifulSoup(response.text, 'html.parser')
+            print("爬不了一点，过")
+            # response = self.session.get(url, timeout=REQUEST_TIMEOUT)
+            # response.raise_for_status()
+            # response.encoding = 'utf-8'
+            # soup = BeautifulSoup(response.text, 'html.parser')
 
-            article_section = soup.find(class_='item_caption_area')
-            if article_section:
-                article_content = BeautifulSoup(str(article_section), 'html.parser').get_text(separator='\n', strip=False)
-            else:
-                print("未找到 item_caption_area，文章内容置空")
-                article_content = ""
+            # article_section = soup.find(class_='item_caption_area')
+            # if article_section:
+            #     article_content = BeautifulSoup(str(article_section), 'html.parser').get_text(separator='\n', strip=False)
+            # else:
+            #     print("未找到 item_caption_area，文章内容置空")
+            #     article_content = ""
 
             # 固定标签
             product_tag = "premium"
             series = "gunpla"
 
-            # 清理文件夹并输出路径
+            # 构建产品文件夹路径
             safe_folder_name = self.data_extractor.sanitize_folder_name(product_name or "premium_item")
-            output_path = os.path.join(output_base, safe_folder_name)
-
-            # 组织 product_info 字段
-            product_info = {}
-            if price:
-                product_info['価格'] = price
-            if release_date:
-                product_info['発売日'] = release_date
+            output_path = os.path.join(base_dir, safe_folder_name)
+            print(f"使用解析的产品名称: {output_path}")
 
             # Premium站点暂不处理图片下载（可后续扩展）
             image_links: List[str] = []
 
+            # 读取已存在的数据（如有）
+            existing_avatar = ''
+            existing_name = product_name
+            existing_info = ""  # Premium Bandai 暂不处理产品信息
+            json_path = os.path.join(output_path, 'product_details.json')
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        existing_data = json.load(f)
+                    if isinstance(existing_data, dict):
+                        existing_avatar = existing_data.get('avatar', '')
+                        existing_name = existing_data.get('name', product_name)
+                        existing_info = existing_data.get('product_info', "")
+                except Exception:
+                    existing_avatar = ''
+
+            # 从base_dir中提取brand信息 (data/HG -> HG)
+            brand = os.path.basename(base_dir) if base_dir else ""
             details = ProductDetails(
-                name=product_name,
+                name=existing_name,
                 image_links=image_links,
-                product_info=product_info,
-                article_content=article_content,
+                product_info=existing_info,
+                article_content="",
                 url=url,
                 product_tag=product_tag,
-                series=series
+                series=series,
+                avatar=existing_avatar,
+                brand=brand
             )
 
             # 保存JSON

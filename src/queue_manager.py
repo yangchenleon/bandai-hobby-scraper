@@ -7,6 +7,7 @@
 
 import sqlite3
 import json
+import os
 from datetime import datetime
 from typing import List, Dict, Optional
 from models import ProductLink
@@ -15,8 +16,15 @@ from models import ProductLink
 class QueueManager:
     """队列管理器"""
     
-    def __init__(self, db_path: str = "bandai_hobby.db"):
+    def __init__(self, db_path: str = "database/bandai_hobby.db"):
         self.db_path = db_path
+        # 确保数据库目录存在
+        try:
+            db_dir = os.path.dirname(self.db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception as e:
+            print(f"创建数据库目录失败: {e}")
         self.init_queues()
     
     def init_queues(self):
@@ -58,31 +66,21 @@ class QueueManager:
         cursor = conn.cursor()
         
         added_count = 0
-        skipped_existing_count = 0
         for link in product_links:
             try:
-                # 如果产品已在products表中存在，则跳过加入pending
+                # 不再依据 products 表过滤；是否执行详情由下游逻辑决定
                 cursor.execute('''
-                    INSERT INTO pending_queue (url, product_name, page_number)
-                    SELECT ?, ?, ?
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM products WHERE url = ?
-                    )
-                    ON CONFLICT(url) DO NOTHING
-                ''', (link.href, link.text, page_number, link.href))
+                    INSERT OR IGNORE INTO pending_queue (url, product_name, page_number)
+                    VALUES (?, ?, ?)
+                ''', (link.href, link.text, page_number))
                 if cursor.rowcount > 0:
                     added_count += 1
-                else:
-                    # 判断是因为已存在于products而跳过，还是因为pending_queue已存在
-                    cursor.execute('SELECT 1 FROM products WHERE url = ? LIMIT 1', (link.href,))
-                    if cursor.fetchone():
-                        skipped_existing_count += 1
             except Exception as e:
                 print(f"添加链接到待处理队列失败: {link.href} - {e}")
         
         conn.commit()
         conn.close()
-        print(f"✅ 已添加 {added_count} 个产品到待处理队列，跳过已存在产品 {skipped_existing_count} 个")
+        print(f"✅ 已添加 {added_count} 个产品到待处理队列")
         return added_count
     
     def get_pending_products(self, limit: int = 10) -> List[Dict]:
@@ -215,3 +213,49 @@ class QueueManager:
         conn.close()
         print(f"✅ 已清理 {deleted_count} 个已完成的项目")
         return deleted_count
+
+    def get_failed_products(self, limit: int = 50) -> List[Dict]:
+        """获取失败队列的产品列表"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, url, product_name, error_message, retry_count, created_at, last_retry_at
+            FROM failed_queue
+            ORDER BY created_at
+            LIMIT ?
+        ''', (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        results: List[Dict] = []
+        for r in rows:
+            results.append({
+                'id': r[0],
+                'url': r[1],
+                'product_name': r[2],
+                'error_message': r[3],
+                'retry_count': r[4],
+                'created_at': r[5],
+                'last_retry_at': r[6],
+            })
+        return results
+
+    def increment_failed_retry(self, failed_id: int):
+        """失败记录重试计数+1并更新时间"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE failed_queue
+            SET retry_count = retry_count + 1,
+                last_retry_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (failed_id,))
+        conn.commit()
+        conn.close()
+
+    def remove_failed(self, failed_id: int):
+        """从失败队列删除记录（重试成功后调用）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM failed_queue WHERE id = ?', (failed_id,))
+        conn.commit()
+        conn.close()

@@ -12,14 +12,20 @@ class DataImporter:
         self.db = DatabaseManager(Config.DATABASE_PATH)
         self.minio = MinIOClient(**Config.get_minio_config())
     
-    def import_all_data(self):
-        """导入data文件夹中的所有数据"""
-        data_dir = Path(Config.DATA_DIR)
+    def import_all_data(self, data_path: str = None):
+        """导入指定路径或默认data文件夹中的所有数据"""
+        if data_path is None:
+            data_dir = Path(Config.DATA_DIR)
+        else:
+            data_dir = Path(data_path)
+        
+        if not data_dir.exists():
+            raise FileNotFoundError(f"数据目录不存在: {data_dir}")
         
         # 查找所有产品文件夹
         product_dirs = [d for d in data_dir.iterdir() if d.is_dir() and d.name != "scraped_data.json"]
         
-        print(f"找到 {len(product_dirs)} 个产品文件夹")
+        print(f"在 {data_dir} 中找到 {len(product_dirs)} 个产品文件夹")
         
         for product_dir in product_dirs:
             try:
@@ -41,6 +47,9 @@ class DataImporter:
         # 添加产品到数据库
         product_id = self.db.add_product(product_data)
         
+        # 处理头像（avatar）
+        self._import_avatar_if_exists(product_id, product_dir, product_data)
+        
         # 处理图像
         images_dir = product_dir / "images"
         if images_dir.exists():
@@ -48,6 +57,24 @@ class DataImporter:
         else:
             print(f"  ⚠️ 未找到图片目录: {images_dir}")
     
+    def _import_avatar_if_exists(self, product_id: int, product_dir: Path, product_data: Dict):
+        """上传并记录产品头像（若存在）"""
+        # 在产品根目录查找可能的头像文件（从 JSON 的 avatar 链接下载后保存的）
+        # 策略：取扩展名常见的 .jpg/.jpeg/.png/.webp 且文件名中不包含 'product_details.json' 且不在 images 目录
+        candidate_files = []
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
+            candidate_files.extend(product_dir.glob(ext))
+        if not candidate_files:
+            return
+        
+        # 选取体积最大的一个作为头像（一般只有一个）
+        avatar_path = max(candidate_files, key=lambda p: p.stat().st_size)
+        object_name = f"products/{product_id}/avatar/{avatar_path.name}"
+        minio_path = self.minio.upload_image(str(avatar_path), object_name)
+        if minio_path:
+            image_id = self.db.add_image(product_id, avatar_path.name, str(avatar_path), image_type='avatar')
+            self.db.update_image_minio_path(image_id, minio_path)
+        
     def import_product_images(self, product_id: int, images_dir: Path, product_name: str):
         """导入产品图像"""
         # 检查MinIO中是否已存在该产品的图片
@@ -63,14 +90,14 @@ class DataImporter:
         for image_file in image_files:
             try:
                 # 生成MinIO对象名称
-                object_name = f"products/{product_id}/{image_file.name}"
+                object_name = f"products/{product_id}/images/{image_file.name}"
                 
                 # 上传到MinIO
                 minio_path = self.minio.upload_image(str(image_file), object_name)
                 
                 if minio_path:
                     # 添加到数据库
-                    image_id = self.db.add_image(product_id, image_file.name, str(image_file))
+                    image_id = self.db.add_image(product_id, image_file.name, str(image_file), image_type='detail')
                     self.db.update_image_minio_path(image_id, minio_path)
                 else:
                     print(f"    ✗ 图像上传失败: {image_file.name}")
@@ -81,8 +108,8 @@ class DataImporter:
     def _check_minio_images_exist(self, product_id: int) -> bool:
         """检查MinIO中是否已存在该产品的图片"""
         try:
-            # 检查MinIO中是否存在该产品的文件夹
-            prefix = f"products/{product_id}/"
+            # 检查MinIO中是否存在该产品的详情图片文件夹
+            prefix = f"products/{product_id}/images/"
             objects = list(self.minio.client.list_objects(
                 self.minio.bucket_name, 
                 prefix=prefix, 
@@ -164,14 +191,9 @@ def main():
     
     importer = DataImporter()
     
-    # 检查命令行参数
-    if len(sys.argv) > 1 and sys.argv[1] == "--sync":
-        # 同步模式：清理数据库与MinIO不一致的记录
-        importer.sync_database_with_minio()
-    else:
-        # 正常导入模式
-        print("开始导入数据...")
-        importer.import_all_data()
+    data_path = "data/MG"
+    print(f"开始导入数据... 路径: {data_path}")
+    importer.import_all_data(data_path)
     
     print("\n统计信息:")
     stats = importer.get_import_stats()

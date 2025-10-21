@@ -6,7 +6,13 @@
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+# 确保可导入 src 目录
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 from queue_manager import QueueManager
 from config import Config

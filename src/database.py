@@ -8,8 +8,15 @@ from minio.error import S3Error
 import hashlib
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "bandai_hobby.db"):
+    def __init__(self, db_path: str = "database/bandai_hobby.db"):
         self.db_path = db_path
+        # 确保数据库目录存在
+        try:
+            db_dir = os.path.dirname(self.db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception as e:
+            print(f"创建数据库目录失败: {e}")
         self.init_database()
         
     def init_database(self):
@@ -28,6 +35,7 @@ class DatabaseManager:
                 url TEXT UNIQUE NOT NULL,
                 product_tag TEXT,
                 series TEXT,
+                brand TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -40,6 +48,7 @@ class DatabaseManager:
                 image_filename TEXT NOT NULL,
                 image_hash TEXT UNIQUE,
                 minio_path TEXT,
+                type TEXT DEFAULT 'detail',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (product_id) REFERENCES products (id)
             )
@@ -56,15 +65,16 @@ class DatabaseManager:
         # 先尝试插入，如果URL已存在则更新
         cursor.execute('''
             INSERT INTO products 
-            (product_name, price, release_date, article_content, url, product_tag, series)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (product_name, price, release_date, article_content, url, product_tag, series, brand)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(url) DO UPDATE SET
                 product_name = excluded.product_name,
                 price = excluded.price,
                 release_date = excluded.release_date,
                 article_content = excluded.article_content,
                 product_tag = excluded.product_tag,
-                series = excluded.series
+                series = excluded.series,
+                brand = excluded.brand
         ''', (
             product_data['product_name'],
             product_data['product_info'].get('価格'),
@@ -72,7 +82,8 @@ class DatabaseManager:
             product_data['article_content'],
             product_data['url'],
             product_data.get('product_tag', ''),
-            product_data.get('series', '')
+            product_data.get('series', ''),
+            product_data.get('brand', '')
         ))
         
         # 获取产品ID（无论是否新插入或更新）
@@ -84,7 +95,7 @@ class DatabaseManager:
         conn.close()
         return product_id
     
-    def add_image(self, product_id: int, image_filename: str, image_path: str) -> int:
+    def add_image(self, product_id: int, image_filename: str, image_path: str, image_type: str = 'detail') -> int:
         """添加图像记录到数据库"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -94,9 +105,9 @@ class DatabaseManager:
             image_hash = hashlib.md5(f.read()).hexdigest()
         
         cursor.execute('''
-            INSERT OR IGNORE INTO images (product_id, image_filename, image_hash, minio_path)
-            VALUES (?, ?, ?, ?)
-        ''', (product_id, image_filename, image_hash, None))
+            INSERT OR IGNORE INTO images (product_id, image_filename, image_hash, minio_path, type)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (product_id, image_filename, image_hash, None, image_type))
         
         image_id = cursor.lastrowid
         conn.commit()
@@ -149,7 +160,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT id, image_filename, image_hash, minio_path, created_at
+            SELECT id, image_filename, image_hash, minio_path, type, created_at
             FROM images WHERE product_id = ? ORDER BY created_at
         ''', (product_id,))
         
@@ -160,7 +171,8 @@ class DatabaseManager:
                 'image_filename': row[1],
                 'image_hash': row[2],
                 'minio_path': row[3],
-                'created_at': row[4]
+                'type': row[4],
+                'created_at': row[5]
             })
         
         conn.close()

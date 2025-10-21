@@ -13,6 +13,7 @@ class ProductLink:
     """产品链接信息"""
     href: Optional[str]
     text: str
+    avatar: Optional[str] = None
     
     def __str__(self):
         return f"ProductLink(text='{self.text}', href='{self.href}')"
@@ -28,6 +29,8 @@ class ProductDetails:
     url: str
     product_tag: str = ""  # 产品标签
     series: str = ""  # 系列链接
+    avatar: str = ""  # 列表卡片头像图链接
+    brand: str = ""  # 品牌标识
     
     def __str__(self):
         return f"ProductDetails(name='{self.name}', images={len(self.image_links)}, info_items={len(self.product_info)})"
@@ -41,7 +44,9 @@ class ProductDetails:
             'article_content': self.article_content,
             'url': self.url,
             'product_tag': self.product_tag,
-            'series': self.series
+            'series': self.series,
+            'avatar': self.avatar,
+            'brand': self.brand
         }
 
 

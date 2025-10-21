@@ -107,20 +107,33 @@ class DataExtractor:
         Returns:
             str: 文章内容
         """
+        # 查找产品文章区域和说明文字区域
         article_section = soup.find(class_=CSS_SELECTORS['product_article'])
+        instruction_section = soup.find(class_='pg-products__instructionTxt')
+        
+        content_parts = []
         
         if article_section:
-            # 处理HTML内容
+            # 处理产品文章区域
             html_content = str(article_section)
             html_content = html_content.replace('<br/>', ' ')
             
             # 重新解析处理后的HTML
             temp_soup = BeautifulSoup(html_content, 'html.parser')
-            article_content = temp_soup.get_text(separator='\n', strip=False)
-            
-            return article_content
+            article_text = temp_soup.get_text(separator='\n', strip=False)
+            if article_text.strip():
+                content_parts.append(article_text)
+        
+        if instruction_section:
+            # 处理说明文字区域
+            instruction_text = instruction_section.get_text(separator='\n', strip=False)
+            if instruction_text.strip():
+                content_parts.append(instruction_text)
+        
+        if content_parts:
+            return '\n\n'.join(content_parts)
         else:
-            print("未找到产品文章区域")
+            print("未找到产品文章区域或说明文字区域")
             return ""
     
     def extract_product_tag(self, soup: BeautifulSoup) -> str:
@@ -131,19 +144,25 @@ class DataExtractor:
             soup: BeautifulSoup解析对象
             
         Returns:
-            str: 产品标签，如"online"、"gbase"等，未找到时返回"general"
+            str: 产品标签，多个标签用分号分隔，如"online;gbase"等，未找到时返回"general"
         """
         # 查找class包含pg-products__tag的元素
         tag_elements = soup.find_all(class_=lambda x: x and 'pg-products__tag' in x)
         
+        tags = []
         for element in tag_elements:
             class_list = element.get('class', [])
             for class_name in class_list:
                 # 查找以-开头的class（如-gbase）
                 if class_name.startswith('-'):
                     tag = class_name[1:].strip()  # 去掉开头的-号
-                    print(f"找到产品标签: {tag}")
-                    return tag
+                    if tag and tag not in tags:  # 避免重复
+                        tags.append(tag)
+        
+        if tags:
+            result = ';'.join(tags)
+            print(f"所有产品标签: {result}")
+            return result
         
         print("未找到产品标签，使用默认值: general")
         return "general"
@@ -193,8 +212,9 @@ class DataExtractor:
         """
         # 移除或替换非法字符
         folder_name = re.sub(r'[<>:"/\\|?*]', '_', folder_name)
-        # 移除多余的空格和点
-        folder_name = re.sub(r'\s+', ' ', folder_name).strip()
+        # 将所有空白（含连续空格、制表符等）统一替换为短横线
+        folder_name = re.sub(r'\s+', '-', folder_name).strip('-')
+        # 去掉末尾的点
         folder_name = folder_name.strip('.')
         # 限制长度
         if len(folder_name) > 100:

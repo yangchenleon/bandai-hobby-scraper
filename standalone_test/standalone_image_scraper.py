@@ -151,7 +151,7 @@ class BandaiImageScraper:
             }
             
             # 使用当前session发送请求，保持cookies
-            response = self.session.get(image_url, headers=headers, timeout=10)
+            response = self.session.get(image_url, headers=headers, timeout=30)
             response.raise_for_status()
             
             # 检查响应内容类型
