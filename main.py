@@ -67,13 +67,9 @@ def main():
     # 创建爬虫实例和队列管理器
     scraper = BandaiScraper()
     from queue_manager import QueueManager
-    from database import DatabaseManager
     from config import Config
-    from data_importer import DataImporter
     
     queue_manager = QueueManager(Config.DATABASE_PATH)
-    db = DatabaseManager(Config.DATABASE_PATH)
-    importer = DataImporter()
     
     # 重置处理中的任务为待处理状态
     print("=== 检查并重置处理中的任务 ===")
@@ -82,7 +78,7 @@ def main():
     # 配置参数
     start_page = 1
     batch_size = 10
-    brand_code = "MG"  # 使用大写品牌代码
+    brand_code = "MGEX"  # 使用大写品牌代码
     from config import BRAND_CODE_TO_SLUG
     brand_slug = BRAND_CODE_TO_SLUG.get(brand_code)
     base_url = PRODUCT_LIST_URL + brand_slug + '/'
@@ -137,8 +133,7 @@ def main():
                 
                 if result:
                     product_details, product_dir = result
-                    # 直接导入该产品（包含图片上传到对象存储）
-                    importer.import_product(Path(product_dir))
+                    # 详情已保存至本地文件夹
                     queue_manager.mark_as_completed(product['id'])
                     success_count += 1
                     print(f"✅ 产品处理成功")

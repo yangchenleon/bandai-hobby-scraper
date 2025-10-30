@@ -51,16 +51,6 @@ DEFAULT_HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-# # 图片下载请求头
-# IMAGE_HEADERS = {
-#     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-#     'Referer': '',  # 动态设置
-#     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-#     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-#     'Accept-Encoding': 'gzip, deflate, br',
-#     'Connection': 'keep-alive',
-# }
-
 # 文件路径配置
 OUTPUT_DIR = "/mnt/d/code/bandai-hobby-scraper/data"
 SCRAPED_DATA_FILE = f"{OUTPUT_DIR}/scraped_data.json"
@@ -86,20 +76,5 @@ class Config:
     # 数据库配置
     DATABASE_PATH = os.getenv("DATABASE_PATH", "database/bandai_hobby.db")
     
-    # MinIO配置
-    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bandai-hobby")
-    
     # 数据源配置
     DATA_DIR = os.getenv("DATA_DIR", "data")
-    
-    @classmethod
-    def get_minio_config(cls) -> dict:
-        return {
-            "endpoint": cls.MINIO_ENDPOINT,
-            "access_key": cls.MINIO_ACCESS_KEY,
-            "secret_key": cls.MINIO_SECRET_KEY,
-            "bucket_name": cls.MINIO_BUCKET
-        }

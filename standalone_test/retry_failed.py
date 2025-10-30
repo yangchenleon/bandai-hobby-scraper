@@ -24,8 +24,6 @@ if SRC_DIR not in sys.path:
 
 from scraper import BandaiScraper
 from queue_manager import QueueManager
-from database import DatabaseManager
-from data_importer import DataImporter
 from config import Config
 
 
@@ -35,7 +33,6 @@ def main():
 
     scraper = BandaiScraper()
     queue_manager = QueueManager(Config.DATABASE_PATH)
-    importer = DataImporter()
 
     failed_items = queue_manager.get_failed_products(limit=1000)
     if not failed_items:
@@ -63,7 +60,7 @@ def main():
 
             if result:
                 _, product_dir = result
-                importer.import_product(Path(product_dir))
+                # 详情已保存到本地文件夹，直接移除失败记录
                 queue_manager.remove_failed(failed_id)
                 success_count += 1
                 print("✅ 重试成功，已从失败队列移除")
