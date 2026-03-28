@@ -45,14 +45,25 @@ class ImageDownloader:
         
         for i, img_url in enumerate(image_links):
             print(f"下载图片 {i+1}/{len(image_links)}: {img_url[:50]}...")
+            
+            # 设置当前下载的文件名（不含扩展名，扩展名由下载器根据内容或URL判断）
+            self._current_image_name = f"{i+1:02d}"
+            
             file_path = self.download_single_image(img_url, referer_url, output_path)
             
             if file_path:
                 downloaded_files.append(file_path)
             else:
                 print(f"  ✗ 图片下载失败，终止本次下载任务")
+                # 清除自定义文件名，避免影响其他调用
+                if hasattr(self, '_current_image_name'):
+                    delattr(self, '_current_image_name')
                 return downloaded_files, False
         
+        # 清除自定义文件名
+        if hasattr(self, '_current_image_name'):
+            delattr(self, '_current_image_name')
+            
         success = len(downloaded_files) == len(image_links)
         print(f"成功下载 {len(downloaded_files)} / {len(image_links)} 张图片")
         
@@ -98,17 +109,35 @@ class ImageDownloader:
                 print(f"  ✗ 响应不是图片格式: {content_type}")
                 return None
             
-            # 生成文件名
+            # 生成文件名 (使用序号命名)
+            # 假设 image_url 中可能包含文件扩展名
             parsed_url = urlparse(image_url)
-            filename = os.path.basename(parsed_url.path)
-            if not filename or '.' not in filename:
-                # 从content-type获取扩展名
+            path = parsed_url.path
+            
+            # 获取扩展名
+            ext = 'jpg'
+            if '.' in path:
+                ext = path.split('.')[-1].lower()
+                # 处理可能带参数的情况，虽然urlparse.path通常不带query
+                if len(ext) > 4: 
+                    ext = 'jpg'
+            
+            # 如果content-type明确，优先使用content-type
+            if 'png' in content_type:
+                ext = 'png'
+            elif 'webp' in content_type:
+                ext = 'webp'
+            elif 'jpeg' in content_type:
                 ext = 'jpg'
-                if 'png' in content_type:
-                    ext = 'png'
-                elif 'webp' in content_type:
-                    ext = 'webp'
-                filename = f"image_{int(time.time())}.{ext}"
+                
+            # 使用传入的自定义文件名（如果存在）
+            if hasattr(self, '_current_image_name') and self._current_image_name:
+                filename = f"{self._current_image_name}.{ext}"
+            else:
+                # 默认使用URL的文件名
+                filename = os.path.basename(path)
+                if not filename or '.' not in filename:
+                    filename = f"image_{int(time.time())}.{ext}"
             
             # 保存文件
             file_path = os.path.join(output_path, filename)

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
-from typing import Optional
 
 """
 配置文件
@@ -38,12 +37,10 @@ BRAND_CODE_TO_SLUG = {
     "TOOL": "tool",
 }
 BASE_URL = "https://bandai-hobby.net"
-PRODUCT_LIST_URL = f"{BASE_URL}/brand/" # 分页总目录，根据这个修改爬取大类
-# PRODUCT_LIST_URL = f"https://bandai-hobby.net/brand/hg/"
+PRODUCT_LIST_URL = f"{BASE_URL}/brand/" 
 
-# 请求头配置
+# 请求头配置 (作为备用或基础Header)
 DEFAULT_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     'Accept-Encoding': 'gzip, deflate, br',
@@ -52,8 +49,14 @@ DEFAULT_HEADERS = {
 }
 
 # 文件路径配置
-OUTPUT_DIR = "/mnt/d/code/bandai-hobby-scraper/data"
-SCRAPED_DATA_FILE = f"{OUTPUT_DIR}/scraped_data.json"
+OUTPUT_DIR = "data"  # 建议使用相对路径或通过环境变量配置
+SCRAPED_DATA_FILE = os.path.join(OUTPUT_DIR, "scraped_data.json")
+
+# 日志配置
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "scraper.log")
+LOG_FORMAT = '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s'
+DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # 请求配置
 REQUEST_TIMEOUT = 10
@@ -69,7 +72,7 @@ CSS_SELECTORS = {
     'detail_label_inner': 'pg-products__labelInner',
     'detail_label_text': 'pg-products__labelTxt',
     'product_article': 'pg-products__article',
-    'pagination_links': 'c-archives__pagination-list-item-link',  # 分页链接选择器
+    'pagination_links': 'c-archives__pagination-list-item-link',
 }
 
 class Config:

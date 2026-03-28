@@ -78,7 +78,7 @@ def main():
     # 配置参数
     start_page = 1
     batch_size = 10
-    brand_code = "MGEX"  # 使用大写品牌代码
+    brand_code = "MG"  # 使用大写品牌代码
     from config import BRAND_CODE_TO_SLUG
     brand_slug = BRAND_CODE_TO_SLUG.get(brand_code)
     base_url = PRODUCT_LIST_URL + brand_slug + '/'
@@ -147,7 +147,7 @@ def main():
                     product['product_name'], 
                     str(e)
                 )
-                queue_manager.mark_as_completed(product['id'])  # 标记为已完成，避免重复处理
+                queue_manager.mark_as_failed_in_pending(product['id'])
                 failed_count += 1
         
         # 显示当前统计
@@ -162,8 +162,8 @@ def main():
     print(f"失败: {failed_count} 个产品")
     
     # 清理已完成的项目
-    if success_count > 0:
-        queue_manager.clear_completed()
+    # if success_count > 0:
+    #     queue_manager.clear_completed()
 
 if __name__ == "__main__":
     main()

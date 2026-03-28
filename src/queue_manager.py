@@ -66,21 +66,44 @@ class QueueManager:
         cursor = conn.cursor()
         
         added_count = 0
+        skipped_count = 0
+        
         for link in product_links:
             try:
-                # 不再依据 products 表过滤；是否执行详情由下游逻辑决定
-                cursor.execute('''
-                    INSERT OR IGNORE INTO pending_queue (url, product_name, page_number)
-                    VALUES (?, ?, ?)
-                ''', (link.href, link.text, page_number))
-                if cursor.rowcount > 0:
+                # 检查是否存在
+                cursor.execute('SELECT status FROM pending_queue WHERE url = ?', (link.href,))
+                row = cursor.fetchone()
+                
+                if row:
+                    status = row[0]
+                    if status in ('completed', 'processing'):
+                        print(f"跳过已存在任务: {link.href}")
+                        skipped_count += 1
+                        continue
+                    elif status == 'failed':
+                        # 重置为pending
+                        cursor.execute('''
+                            UPDATE pending_queue 
+                            SET status = 'pending', page_number = ?, created_at = CURRENT_TIMESTAMP
+                            WHERE url = ?
+                        ''', (page_number, link.href))
+                        added_count += 1
+                    else:
+                        # pending状态，跳过
+                        skipped_count += 1
+                else:
+                    # 插入新任务
+                    cursor.execute('''
+                        INSERT INTO pending_queue (url, product_name, page_number, status)
+                        VALUES (?, ?, ?, 'pending')
+                    ''', (link.href, link.text, page_number))
                     added_count += 1
             except Exception as e:
                 print(f"添加链接到待处理队列失败: {link.href} - {e}")
         
         conn.commit()
         conn.close()
-        print(f"✅ 已添加 {added_count} 个产品到待处理队列")
+        print(f"✅ 已添加 {added_count} 个产品到待处理队列 (跳过 {skipped_count} 个)")
         return added_count
     
     def get_pending_products(self, limit: int = 10) -> List[Dict]:
@@ -131,6 +154,20 @@ class QueueManager:
         cursor.execute('''
             UPDATE pending_queue 
             SET status = 'completed'
+            WHERE id = ?
+        ''', (queue_id,))
+        
+        conn.commit()
+        conn.close()
+
+    def mark_as_failed_in_pending(self, queue_id: int):
+        """标记为失败（在pending_queue中）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE pending_queue 
+            SET status = 'failed'
             WHERE id = ?
         ''', (queue_id,))
         

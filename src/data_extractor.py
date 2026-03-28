@@ -6,6 +6,7 @@
 """
 
 import re
+import hashlib
 from bs4 import BeautifulSoup
 from typing import Dict, List, Tuple
 
@@ -19,6 +20,58 @@ class DataExtractor:
     def __init__(self):
         """初始化数据提取器"""
         pass
+    
+    def extract_product_id(self, url: str) -> str:
+        """
+        从URL中提取产品ID
+        
+        Args:
+            url: 产品URL (e.g., https://bandai-hobby.net/item/6218/)
+            
+        Returns:
+            str: 产品ID，如果无法提取则返回URL的哈希值
+        """
+        if not url:
+            return ""
+            
+        # P-Bandai URL pattern: /item/item-(\d+)
+        # 优先匹配 P-Bandai，因为它的结构也是 /item/ 开头，容易被通用规则误判
+        match = re.search(r'/item/item-(\d+)', url)
+        if match:
+            return match.group(1)
+
+        # 尝试从URL中提取数字ID (允许包含下划线)
+        # 匹配 pattern: /item/([\w_]+)
+        # 注意：排除 item- 开头的情况，以免误匹配 P-Bandai 的前缀部分
+        match = re.search(r'/item/(?!item-)([\w_]+)', url)
+        if match:
+            # 去掉可能的尾部斜杠（虽然regex不会匹配到斜杠，但为了保险）
+            return match.group(1).rstrip('/')
+            
+        # 如果无法提取数字ID，使用URL的MD5哈希前8位
+        print(f"无法从URL提取ID: {url}，使用哈希值")
+        return hashlib.md5(url.encode('utf-8')).hexdigest()[:8]
+
+    def sanitize_folder_name(self, name: str) -> str:
+        """
+        清理文件夹名称，移除非法字符
+        
+        Args:
+            name: 原始名称
+            
+        Returns:
+            str: 清理后的名称
+        """
+        # 替换非法字符
+        name = re.sub(r'[\\/:*?"<>|]', '-', name)
+        # 替换空白字符为下划线
+        name = re.sub(r'\s+', '-', name)
+        # 移除首尾空白
+        name = name.strip()
+        # 避免文件名过长
+        if len(name) > 100:
+            name = name[:100]
+        return name
     
     def extract_product_name(self, soup: BeautifulSoup) -> str:
         """

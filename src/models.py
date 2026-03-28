@@ -27,17 +27,19 @@ class ProductDetails:
     product_info: Dict[str, str]
     article_content: str
     url: str
+    product_id: str = ""  # 产品ID
     product_tag: str = ""  # 产品标签
     series: str = ""  # 系列链接
     avatar: str = ""  # 列表卡片头像图链接
     brand: str = ""  # 品牌标识
     
     def __str__(self):
-        return f"ProductDetails(name='{self.name}', images={len(self.image_links)}, info_items={len(self.product_info)})"
+        return f"ProductDetails(id='{self.product_id}', name='{self.name}', images={len(self.image_links)}, info_items={len(self.product_info)})"
     
     def to_dict(self) -> Dict:
         """转换为字典格式"""
         return {
+            'product_id': self.product_id,
             'product_name': self.name,
             'image_links': self.image_links,
             'product_info': self.product_info,
