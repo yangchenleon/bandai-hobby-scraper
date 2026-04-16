@@ -92,7 +92,14 @@ def main():
         
         if list_result.success and list_result.data:
             added_count = queue_manager.add_to_pending_queue(list_result.data, page_num)
-            print(f"第 {page_num} 页添加了 {added_count} 个产品到待处理队列")
+            print(f"第 {page_num} 页处理完成：新增/重置 {added_count} 个任务，跳过 {len(list_result.data) - added_count} 个已存在任务")
+            
+            # --- 增量更新主动终止逻辑 ---
+            # 如果当前页面爬取到了数据，但新增任务数为 0，说明这一页所有产品都已存在于队列中
+            # 按照官网按时间排序的规律，后续页面无需继续扫描。
+            if added_count == 0 and len(list_result.data) > 0:
+                print(f"💡 检测到第 {page_num} 页所有产品已衔接历史数据，主动终止列表扫描。")
+                break
         else:
             print(f"第 {page_num} 页爬取失败")
     
